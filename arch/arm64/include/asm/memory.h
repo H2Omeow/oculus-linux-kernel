@@ -30,7 +30,7 @@
  * keep a constant PAGE_OFFSET and "fallback" to using the higher end
  * of the VMEMMAP where 52-bit support is not available in hardware.
  */
-#define VMEMMAP_SIZE ((_PAGE_END(VA_BITS_MIN) - PAGE_OFFSET) \
+#define VMEMMAP_SIZE ((_PAGE_END(KERNEL_VA_BITS) - PAGE_OFFSET) \
 			>> (PAGE_SHIFT - STRUCT_PAGE_MAX_SHIFT))
 
 /*
@@ -41,8 +41,15 @@
  * VA_BITS - the maximum number of bits for virtual addresses.
  */
 #define VA_BITS			(CONFIG_ARM64_VA_BITS)
+/*
+ * 用户态 VA48 / 内核态 VA39。
+ * 内核映射（PAGE_OFFSET/PAGE_END/vmemmap/fixmap/modules）全部固定在
+ * KERNEL_VA_BITS，保证厂商预编译模块依赖的布局不变；
+ * 用户地址宽度仍由 CONFIG_ARM64_VA_BITS 决定。
+ */
+#define KERNEL_VA_BITS		(39)
 #define _PAGE_OFFSET(va)	(-(UL(1) << (va)))
-#define PAGE_OFFSET		(_PAGE_OFFSET(VA_BITS))
+#define PAGE_OFFSET		(_PAGE_OFFSET(KERNEL_VA_BITS))
 #define KIMAGE_VADDR		(MODULES_END)
 #define MODULES_END		(MODULES_VADDR + MODULES_VSIZE)
 #define MODULES_VADDR		(KASAN_SHADOW_END)
@@ -76,7 +83,7 @@
 #define KASAN_THREAD_SHIFT	1
 #else
 #define KASAN_THREAD_SHIFT	0
-#define KASAN_SHADOW_END	(_PAGE_END(VA_BITS_MIN))
+#define KASAN_SHADOW_END	(_PAGE_END(KERNEL_VA_BITS))
 #endif /* CONFIG_KASAN */
 
 #define MIN_THREAD_SHIFT	(14 + KASAN_THREAD_SHIFT)
@@ -165,7 +172,8 @@
 #include <asm/bug.h>
 
 extern u64			vabits_actual;
-#define PAGE_END		(_PAGE_END(vabits_actual))
+/* 运行期 vabits_actual = VA_BITS(48)，但内核映射终点固定为 VA39。 */
+#define PAGE_END		(_PAGE_END(KERNEL_VA_BITS))
 
 extern s64			memstart_addr;
 /* PHYS_OFFSET - the physical address of the start of memory. */

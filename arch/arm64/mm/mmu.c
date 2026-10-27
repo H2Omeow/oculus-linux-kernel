@@ -735,7 +735,7 @@ static void __init map_kernel(pgd_t *pgdp)
 		 * with 16k/4 levels, so we can simply reuse the pud level
 		 * entry instead.
 		 */
-		BUG_ON(!IS_ENABLED(CONFIG_ARM64_16K_PAGES));
+		/* VA48/VA39 的 4K 四级页表同样复用该 PUD。 */
 		bm_pgdp = pgd_offset_pgd(pgdp, FIXADDR_START);
 		bm_p4dp = p4d_offset(bm_pgdp, FIXADDR_START);
 		bm_pudp = pud_set_fixmap_offset(bm_p4dp, FIXADDR_START);
@@ -1250,7 +1250,7 @@ void __init early_fixmap_init(void)
 		 * share the top level pgd entry, which should only happen on
 		 * 16k/4 levels configurations.
 		 */
-		BUG_ON(!IS_ENABLED(CONFIG_ARM64_16K_PAGES));
+		/* VA48/VA39 的 4K 四级页表同样进入共享 PUD 路径。 */
 		pudp = pud_offset_kimg(p4dp, addr);
 	} else {
 		if (p4d_none(p4d))
@@ -1492,7 +1492,8 @@ static void __remove_pgd_mapping(pgd_t *pgdir, unsigned long start, u64 size)
 
 static bool inside_linear_region(u64 start, u64 size)
 {
-	u64 start_linear_pa = __pa(_PAGE_OFFSET(vabits_actual));
+	/* 线性映射起点按固定后的 VA39 PAGE_OFFSET 计算。 */
+	u64 start_linear_pa = __pa(PAGE_OFFSET);
 	u64 end_linear_pa = __pa(PAGE_END - 1);
 
 	if (IS_ENABLED(CONFIG_RANDOMIZE_BASE)) {

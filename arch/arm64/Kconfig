@@ -255,7 +255,8 @@ config ARCH_MMAP_RND_BITS_MAX
        default 30 if ARM64_VA_BITS=47
        default 29 if ARM64_VA_BITS=48 && ARM64_64K_PAGES
        default 31 if ARM64_VA_BITS=48 && ARM64_16K_PAGES
-       default 33 if ARM64_VA_BITS=48
+# 默认 mmap 窗口保留 VA39，随机偏移上限也必须保留 24 位。
+       default 24 if ARM64_VA_BITS=48
        default 14 if ARM64_64K_PAGES
        default 16 if ARM64_16K_PAGES
        default 18

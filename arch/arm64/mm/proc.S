@@ -434,7 +434,9 @@ SYM_FUNC_START(__cpu_setup)
 	 * Set/prepare TCR and TTBR. TCR_EL1.T1SZ gets further
 	 * adjusted if the kernel is compiled with 52bit VA support.
 	 */
-	mov_q	x10, TCR_TxSZ(VA_BITS) | TCR_CACHE_FLAGS | TCR_SMP_FLAGS | \
+	/* T0SZ 按 VA_BITS(48) 走四级表；T1SZ 按 KERNEL_VA_BITS(39) 保持内核布局。 */
+	mov_q	x10, TCR_T0SZ(VA_BITS) | TCR_T1SZ(KERNEL_VA_BITS) | \
+			TCR_CACHE_FLAGS | TCR_SMP_FLAGS | \
 			TCR_TG_FLAGS | TCR_KASLR_FLAGS | TCR_ASID16 | \
 			TCR_TBI0 | TCR_A1 | TCR_KASAN_SW_FLAGS | TCR_MTE_FLAGS
 

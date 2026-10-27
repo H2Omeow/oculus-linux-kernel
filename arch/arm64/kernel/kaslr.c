@@ -122,8 +122,12 @@ u64 __init kaslr_early_init(void)
 	 * let's always round to 2 MB so we don't interfere with the ability to
 	 * map using contiguous PTEs
 	 */
-	mask = ((1UL << (VA_BITS_MIN - 2)) - 1) & ~(SZ_2M - 1);
-	offset = BIT(VA_BITS_MIN - 3) + (seed & mask);
+	/*
+	 * 内核映射固定在 KERNEL_VA_BITS(39)，随机化范围不能按
+	 * VA_BITS_MIN(48) 计算，否则镜像会被放到 VA39 窗口之外。
+	 */
+	mask = ((1UL << (KERNEL_VA_BITS - 2)) - 1) & ~(SZ_2M - 1);
+	offset = BIT(KERNEL_VA_BITS - 3) + (seed & mask);
 
 	/* use the top 16 bits to randomize the linear region */
 	memstart_offset_seed = seed >> 48;
