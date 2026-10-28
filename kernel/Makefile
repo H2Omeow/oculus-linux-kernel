@@ -138,11 +138,18 @@ KCOV_INSTRUMENT_stackleak.o := n
 
 obj-$(CONFIG_SCF_TORTURE_TEST) += scftorture.o
 
-$(obj)/configs.o: $(obj)/config_data.gz
+$(obj)/configs.o: $(obj)/config_data.gz $(obj)/ikconfig_config_hash.h
 
-targets += config_data config_data.gz
+targets += config_data config_data.gz ikconfig_config_hash.h
 $(obj)/config_data.gz: $(obj)/config_data FORCE
 	$(call if_changed,gzip)
+
+$(obj)/ikconfig_config_hash.h: $(obj)/config_data.gz FORCE
+	$(call filechk,ikconfig_config_hash)
+
+define filechk_ikconfig_config_hash
+	printf '#define IKCONFIG_CONFIG_DATA_SHA256 "%s"\n' "$$(sha256sum $< | cut -d' ' -f1)"
+endef
 
 filechk_cat = cat $<
 

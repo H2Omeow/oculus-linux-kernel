@@ -21,7 +21,7 @@
 #include <linux/of.h>
 #include <linux/suspend.h>
 #include <linux/kobject.h>
-#include <../base/base.h>
+#include "../base/base.h"
 
 #define CREATE_TRACE_POINTS
 #include <trace/events/thermal.h>

@@ -1,0 +1,25 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: GPL-2.0-only
+set -euo pipefail
+
+lld_jobs=${QUEST_LLD_JOBS:-2}
+thinlto_jobs=${QUEST_THINLTO_JOBS:-2}
+for value in "$lld_jobs" "$thinlto_jobs"; do
+    if [[ ! "$value" =~ ^[1-9][0-9]*$ ]]; then
+        printf 'ld.lld-limited: QUEST_LLD_JOBS and QUEST_THINLTO_JOBS must be positive integers\n' >&2
+        exit 1
+    fi
+done
+lld=$(command -v ld.lld) || {
+    printf 'ld.lld-limited: ld.lld is not on PATH\n' >&2
+    exit 1
+}
+
+# Limit the costly relocatable kernel/module links. Leave version/probe and
+# final executable links unchanged so Kbuild can inspect the real linker.
+for arg in "$@"; do
+    if [[ "$arg" == "-r" || "$arg" == "--relocatable" ]]; then
+        exec "$lld" "$@" --threads="$lld_jobs" --thinlto-jobs="$thinlto_jobs" --lto-partitions=1
+    fi
+done
+exec "$lld" "$@"

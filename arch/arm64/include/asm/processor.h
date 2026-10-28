@@ -53,7 +53,10 @@
  * TASK_UNMAPPED_BASE - the lower boundary of the mmap VM area.
  */
 
-#define DEFAULT_MAP_WINDOW_64	(UL(1) << VA_BITS_MIN)
+/* Keep default mmap/stack/ELF placement within the vendor's 39-bit window.
+ * Explicit high hints still use the full TASK_SIZE_64 below.
+ */
+#define DEFAULT_MAP_WINDOW_64	(UL(1) << KERNEL_VA_BITS)
 #define TASK_SIZE_64		(UL(1) << vabits_actual)
 
 #ifdef CONFIG_COMPAT

@@ -202,10 +202,11 @@ static int vd6281_spi_open(struct inode *inode, struct file *file)
 }
 
 //Q15 format. 15 bits for decimal part.
-//in should be in [0, 1)
-static inline int16_t convert_to_Q15_format(float in)
+//Kernel code is built with -mgeneral-regs-only, so no floating point here.
+//num/den are small integers, so Q15(num/den) == (num << 15) / den.
+static inline int16_t convert_ratio_to_Q15_format(int32_t num, int32_t den)
 {
-  return (int16_t)((float)(1<<15) * in);
+  return (int16_t)(((int64_t)num << 15) / den);
 }
 
 /*
@@ -314,7 +315,7 @@ static void downsample8_cic_compensae(
   // need to remove this gain from the compensation filter output.
   // to keep unit gain on average
   // convert the inverse of the compensation filter gain to Q15 format.
-  inverse_gain_Q15 = convert_to_Q15_format(1.0f / (2.0f - compensate_gain));
+  inverse_gain_Q15 = convert_ratio_to_Q15_format(1, 2 - compensate_gain);
 
   s = 0;
   for (i = 0; i < input_PDM_size; i++) {

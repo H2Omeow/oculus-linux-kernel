@@ -70,6 +70,16 @@
 #define KGSL_IOMMU_VA_BASE64		0x4000000000ULL
 #define KGSL_IOMMU_VA_END64		0x8000000000ULL
 
+/*
+ * Experimental GPU-only TTBR0 ranges, used when CONFIG_QCOM_KGSL_GPU_VA48 is
+ * enabled and the SMMU reports 48-bit support. All end addresses are
+ * exclusive. These describe GPU virtual addresses only; nothing here changes
+ * the CPU page tables.
+ */
+#define KGSL_IOMMU_SVM_END48		(1ULL << 48)
+#define KGSL_IOMMU_VA_BASE48		(1ULL << 47)
+#define KGSL_IOMMU_VA_END48		(1ULL << 48)
+
 #define CP_APERTURE_REG			0
 #define CP_SMMU_APERTURE_ID		0x1B
 
@@ -170,6 +180,8 @@ struct kgsl_iommu {
 	u32 pagesize;
 	/** @cx_gdsc: CX GDSC handle in case the IOMMU needs it */
 	struct regulator *cx_gdsc;
+	/** @gpu_va48: TTBR0-only 48-bit addressing, set after a powered probe */
+	bool gpu_va48;
 };
 
 /*

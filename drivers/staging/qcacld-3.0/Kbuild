@@ -1,5 +1,8 @@
 # Redirect root path through a symlink to avoid command line overflows
-PATCH_LONG_PATH := $(srctree)/drivers/staging/qcacld-3.0
+# srctree is "." for an in-tree build, which would make the symlink point at
+# ./drivers/staging/qcacld-3.0 relative to itself. Resolve it to an absolute
+# path so the shortcut works for both in-tree and external module builds.
+PATCH_LONG_PATH := $(abspath $(srctree)/drivers/staging/qcacld-3.0)
 PATCH_SHORT_PATH := /tmp/qcacld-3.0
 PATCH_SYMLINK := $(shell ln -nsf $(PATCH_LONG_PATH) $(PATCH_SHORT_PATH))
 

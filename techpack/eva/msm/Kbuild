@@ -47,6 +47,9 @@ endif
 KBUILD_CPPFLAGS += -DHALLIDAY_DISABLE=1
 KBUILD_CPPFLAGS += -DHALLIDAY_BRINGUP=1
 
+# clang 23 allocates a larger frame than the vendor's clang 12 here.
+CFLAGS_eva/cvp_hfi.o := -Wframe-larger-than=8192
+
 msm-eva-objs := eva/cvp.o \
         eva/msm_cvp_ioctl.o \
         eva/msm_cvp_platform.o \

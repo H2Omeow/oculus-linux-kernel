@@ -5041,6 +5041,12 @@ static unsigned long get_svm_unmapped_area(struct file *file,
 		entry->memdesc.flags))
 		return -ERANGE;
 
+	/*
+	 * High hints and MAP_FIXED were tried above against the full SVM range.
+	 * Preserve the vendor's automatic CPU/SVM placement for ordinary mmap.
+	 */
+	end = min_t(u64, end, KGSL_IOMMU_SVM_END64);
+
 	/* Find the first gap in the iova map */
 	iova = kgsl_mmu_find_svm_region(private->pagetable, start, end,
 		len, align);

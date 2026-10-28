@@ -16,6 +16,11 @@
 #include <linux/init.h>
 #include <linux/uaccess.h>
 
+#include "ikconfig_config_hash.h"
+
+/* .incbin contents are invisible to the ThinLTO cache key. */
+static const char ikconfig_config_hash[] __used = IKCONFIG_CONFIG_DATA_SHA256;
+
 /*
  * "IKCFG_ST" and "IKCFG_ED" are used to extract the config data from
  * a binary kernel image or a module. See scripts/extract-ikconfig.

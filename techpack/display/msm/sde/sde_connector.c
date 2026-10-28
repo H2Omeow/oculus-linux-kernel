@@ -2300,7 +2300,8 @@ static ssize_t _sde_conn_dcs_cmd_write(struct file *file,
 {
 	struct drm_connector *connector = file->private_data;
 	struct sde_connector *c_conn;
-	char *input, *token, *input_copy, *input_dup, *payload = NULL;
+	char *input, *token, *input_copy = NULL;
+	char *input_dup = NULL, *payload = NULL;
 	const char *delim = " ";
 	struct dsi_display *display;
 	struct mipi_dsi_device *dsi;
@@ -2376,7 +2377,8 @@ static ssize_t _sde_conn_dcs_cmd_unicast_write(struct file *file,
 {
 	struct drm_connector *connector = file->private_data;
 	struct sde_connector *c_conn;
-	char *input, *line_token, *token, *input_copy, *input_dup, *payload = NULL;
+	char *input, *line_token, *token, *input_copy = NULL;
+	char *input_dup = NULL, *payload = NULL;
 	const char *delim = " ";
 	const char *line_delim = "\n";
 	struct dsi_display *display;

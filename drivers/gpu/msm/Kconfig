@@ -12,6 +12,21 @@ config QCOM_KGSL
 	  on QTI targets. This includes power management, memory management,
 	  and scheduling for the Adreno GPUs.
 
+config QCOM_KGSL_GPU_VA48
+	bool "Experimental 48-bit GPU TTBR0 virtual addresses"
+	depends on ARM64 && 64BIT
+	depends on QCOM_KGSL
+	default n
+	help
+	  Extend only the non-secure GPU TTBR0 page tables past 39 bits,
+	  after checking the powered SMMU IDR2 register for 48-bit support
+	  and 4K translation granule support. The CPU address space, TTBR1
+	  mappings, secure contexts and compat (32-bit) mappings keep their
+	  existing layout.
+
+	  This is experimental. A matching reconstructed KGSL module and
+	  on-device validation are both required. If unsure, say N.
+
 config DEVFREQ_GOV_QCOM_ADRENO_TZ
 	tristate "Qualcomm Technologies, Inc. GPU frequency governor"
 	depends on PM_DEVFREQ && QCOM_KGSL

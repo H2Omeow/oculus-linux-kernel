@@ -1346,13 +1346,9 @@ static int check_version(const struct load_info *info,
 	return 1;
 
 bad_version:
-	/*
-	 * 页表层级变化会改变 genksyms CRC。保留 CONFIG_MODVERSIONS 与
-	 * vermagic；此处放宽仅避免 CRC 失配挡住模块加载。
-	 */
-	pr_warn("%s: disagrees about version of symbol %s, ignored\n",
+	pr_warn("%s: disagrees about version of symbol %s\n",
 	       info->name, symname);
-	return 1;
+	return 0;
 }
 
 static inline int check_modstruct_version(const struct load_info *info,
