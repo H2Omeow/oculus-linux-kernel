@@ -539,4 +539,17 @@ source "drivers/misc/habanalabs/Kconfig"
 source "drivers/misc/isl97900_led/Kconfig"
 source "drivers/misc/uacce/Kconfig"
 source "drivers/misc/hdcp/Kconfig"
+
+config QUEST_HANDOFF
+	bool "Quest 3S EL1 handoff bring-up aids"
+	depends on ARM64
+	help
+	  Bring-up aids for a kernel started by the quest3s-el1-kexec EL1 hot
+	  handoff rather than by the bootloader: a deadman timer that restarts
+	  the machine if boot stalls, so the ramoops console log can be read
+	  back from the stock kernel, and a boot banner describing the
+	  exception level and translation state the handoff produced.
+
+	  Say N unless this kernel is started by that loader.
+
 endmenu

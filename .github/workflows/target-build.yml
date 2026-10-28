@@ -1,0 +1,136 @@
+name: Handoff target build
+
+# Build the VA48 target kernel that the quest3s-el1-kexec EL1 loader hands off
+# to, configured from the *device's own* /proc/config.gz plus the feature
+# delta in tools/quest3s/handoff-target.fragment.
+#
+# Toolchain: the Android clang release named in the device kernel's
+# CONFIG_CC_VERSION_TEXT (r450784e / clang 14.0.7).  That is the compiler Meta
+# used for this source generation; it is deliberately preferred over a newer
+# upstream LLVM for a kernel that has to boot on the first attempt.
+#
+# Outputs: Image, Image.el1 (boot-header-exact export for the loader),
+# Module.symvers, .config and every module, plus a report comparing the module
+# set with the 267 modules the device actually has loaded.
+
+on:
+  push:
+    branches: [va48-quest3s, 'handoff/**']
+  workflow_dispatch:
+    inputs:
+      modules:
+        description: build modules as well as Image
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  CLANG_REV: clang-r450784e
+  CLANG_REF: refs/heads/android14-release
+  DEVICE_CONFIG: tools/quest3s/device-5.10.240-g9cb2f620a9a8.config
+  FRAGMENT: tools/quest3s/handoff-target.fragment
+  LOADER_RAW: https://raw.githubusercontent.com/H2Omeow/quest3s-el1-kexec/main
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Host packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex libssl-dev libelf-dev cpio \
+            rsync gzip xz-utils python3 pkg-config \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
+
+      - name: Cache Android clang
+        id: clang
+        uses: actions/cache@v4
+        with:
+          path: ~/clang
+          key: ${{ env.CLANG_REV }}-v1
+
+      - name: Fetch Android clang
+        if: steps.clang.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/clang && cd ~/clang
+          curl -fsSL --retry 3 -o clang.tgz \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/$CLANG_REF/$CLANG_REV.tar.gz"
+          tar -xzf clang.tgz && rm clang.tgz
+          ./bin/clang --version | head -1
+
+      - name: Configure from the device configuration + feature fragment
+        run: |
+          export PATH="$HOME/clang/bin:$PATH"
+          mkdir -p out
+          cp "$DEVICE_CONFIG" out/.config
+          ./scripts/kconfig/merge_config.sh -m -O out out/.config "$FRAGMENT"
+          make -s ARCH=arm64 LLVM=1 LLVM_IAS=1 REAL_CC=clang \
+            CROSS_COMPILE=aarch64-linux-gnu- LOCALVERSION= O=out olddefconfig
+          echo "== requested features =="
+          grep -E '^CONFIG_(ARM64_VA_BITS|PGTABLE_LEVELS|NTSYNC|KSU|QCOM_KGSL|USER_NS|PID_NS|OVERLAY_FS|QUEST_HANDOFF|LTO_CLANG|CFI_CLANG|SHADOW_CALL_STACK|MODVERSIONS|PSTORE_RAM|RANDOMIZE_BASE|LOCALVERSION)=' out/.config | sort
+          echo "== drivers the device loads that this configuration drops =="
+          for s in SND_SOC_MAX98388 SENSORLOCK VIRTUAL_SENSOR OCULUS_CHARGING_DOCK \
+                   AK09973 USB_PDFU LEDS_CLASS_FLASH LEDS_QTI_FLASH \
+                   LEDS_TRIGGER_DEFAULT_ON IIO_KFIFO_BUF IIO_TRIGGERED_BUFFER; do
+            grep -q "^CONFIG_$s=[my]" out/.config || echo "MISSING CONFIG_$s"
+          done
+          cp out/.config config-used.txt
+
+      - name: Build Image and modules
+        run: |
+          export PATH="$HOME/clang/bin:$PATH"
+          targets="Image"
+          if [ "${{ github.event_name }}" != 'workflow_dispatch' ] || [ "${{ inputs.modules }}" = 'true' ]; then
+            targets="Image modules"
+          fi
+          make ARCH=arm64 LLVM=1 LLVM_IAS=1 REAL_CC=clang \
+            CROSS_COMPILE=aarch64-linux-gnu- LOCALVERSION= O=out \
+            -j"$(nproc)" $targets 2>&1 | tail -n 400 > build-tail.log || {
+              tail -n 200 build-tail.log; exit 1; }
+          tail -n 20 build-tail.log
+          cat out/include/config/kernel.release
+
+      - name: Export Image.el1 for the loader
+        run: |
+          export PATH="$HOME/clang/bin:$PATH"
+          curl -fsSL -o prepare-image.py "$LOADER_RAW/scripts/prepare-image.py"
+          python3 prepare-image.py out/vmlinux Image.el1
+          ls -l out/arch/arm64/boot/Image Image.el1
+
+      - name: Compare the module set with the device
+        run: |
+          curl -fsSL -o device-modules.txt "$LOADER_RAW/device/stock-loaded-modules.txt"
+          awk '{print $1}' device-modules.txt | sort -u > want.txt
+          find out -name '*.ko' -printf '%f\n' | sed 's/\.ko$//' | tr '-' '_' | sort -u > have.txt
+          echo "built $(wc -l < have.txt) modules; device has $(wc -l < want.txt) loaded"
+          echo "== loaded on the device but not built here =="
+          comm -23 want.txt have.txt | tee missing-modules.txt
+          echo "== built here but not loaded on the device =="
+          comm -13 want.txt have.txt | head -n 60
+
+      - name: Collect artifacts
+        run: |
+          mkdir -p dist/modules
+          cp out/arch/arm64/boot/Image dist/ 2>/dev/null || true
+          cp Image.el1 dist/ 2>/dev/null || true
+          cp out/Module.symvers out/System.map config-used.txt dist/ 2>/dev/null || true
+          cp out/include/config/kernel.release dist/ 2>/dev/null || true
+          find out -name '*.ko' -exec cp {} dist/modules/ \; 2>/dev/null || true
+          (cd dist && sha256sum Image Image.el1 Module.symvers 2>/dev/null | tee SHA256SUMS)
+          du -sh dist
+
+      - name: Upload target kernel
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quest3s-va48-target
+          path: |
+            dist/
+            build-tail.log
+            missing-modules.txt
+          if-no-files-found: warn

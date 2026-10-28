@@ -1,0 +1,69 @@
+# Quest 3S VA48 target: configuration delta applied on top of the *device's*
+# own configuration (device/stock-5.10.240-g9cb2f620a9a8.config, read from the
+# running kernel's /proc/config.gz).
+#
+# Rationale: the published vendor/oculus_anorak_defconfig is not the device's
+# configuration.  The device build enables 11 drivers that defconfig leaves
+# out (SND_SOC_MAX98388, SENSORLOCK, VIRTUAL_SENSOR, OCULUS_CHARGING_DOCK,
+# AK09973, USB_PDFU, LEDS_CLASS_FLASH/LEDS_QTI_FLASH/LEDS_TRIGGER_DEFAULT_ON,
+# IIO_KFIFO_BUF, IIO_TRIGGERED_BUFFER) and sets META_DTS_DIR="panther".
+# Deriving the target from the device configuration keeps every driver the
+# device actually loads and limits the delta to the requested features.
+
+# --- user-space VA48 (4 KiB, four level) -----------------------------------
+CONFIG_ARM64_VA_BITS_48=y
+# CONFIG_ARM64_VA_BITS_39 is not set
+
+# --- requested features ----------------------------------------------------
+CONFIG_NTSYNC=y
+CONFIG_QCOM_KGSL=m
+CONFIG_QCOM_KGSL_GPU_VA48=y
+CONFIG_KSU=y
+CONFIG_KSU_TRACEPOINT_HOOK=y
+CONFIG_KSU_MULTI_MANAGER_SUPPORT=y
+# CONFIG_KSU_MANUAL_HOOK is not set
+# CONFIG_KSU_DEBUG is not set
+
+# --- Droidspaces standard-mode kernel prerequisites ------------------------
+CONFIG_SYSVIPC=y
+CONFIG_POSIX_MQUEUE=y
+CONFIG_FHANDLE=y
+CONFIG_CHECKPOINT_RESTORE=y
+CONFIG_NAMESPACES=y
+CONFIG_UTS_NS=y
+CONFIG_IPC_NS=y
+CONFIG_USER_NS=y
+CONFIG_PID_NS=y
+CONFIG_NET_NS=y
+CONFIG_CGROUP_DEVICE=y
+CONFIG_CGROUP_PIDS=y
+CONFIG_DEVTMPFS=y
+# CONFIG_DEVTMPFS_MOUNT is not set
+CONFIG_OVERLAY_FS=y
+CONFIG_TUN=y
+CONFIG_VETH=y
+CONFIG_BRIDGE=y
+CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y
+CONFIG_NETFILTER_XT_MATCH_RECENT=y
+CONFIG_NETFILTER_XT_TARGET_LOG=y
+CONFIG_NF_LOG_IPV4=y
+CONFIG_NF_LOG_IPV6=y
+
+# --- handoff bring-up ------------------------------------------------------
+# Deadman restart + boot banner: the only way to recover a log from a kernel
+# that was handed off without a console (see drivers/misc/quest_handoff.c).
+CONFIG_QUEST_HANDOFF=y
+
+# --- identity --------------------------------------------------------------
+CONFIG_LOCALVERSION="-quest3s-va48"
+# CONFIG_LOCALVERSION_AUTO is not set
+
+# --- build shape -----------------------------------------------------------
+# ThinLTO keeps the link inside a CI runner's memory; the device build used
+# full LTO.  Neither is an ABI promise: the target's modules are rebuilt from
+# this same tree.
+CONFIG_LTO_CLANG_THIN=y
+# CONFIG_LTO_CLANG_FULL is not set
+# CONFIG_DEBUG_INFO is not set
+# CONFIG_DEBUG_INFO_BTF is not set
+# CONFIG_META_SAMPLE_PGO is not set
