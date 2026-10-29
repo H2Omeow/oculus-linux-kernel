@@ -1,0 +1,145 @@
+name: Stock 5.10.240 KMI control build
+
+# Control experiment: build the *unmodified* public stock tree with the device's
+# own /proc/config.gz and nothing else.  This answers one question only:
+#
+#   can the public source reproduce the symbol CRCs that the 267 vendor modules
+#   in /vendor/lib/modules were built against?
+#
+# No fork patch, no VA48, no KSU, no NTSync -- so any CRC difference here is a
+# difference between Meta's private kernel source and the public snapshot, not
+# something we introduced.
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/stock-kmi-control.yml'
+
+env:
+  STOCK_URL: https://github.com/facebookincubator/oculus-linux-kernel
+  STOCK_SHA: 729ec6c4b2086454e0157cbc810f5a460789cc67
+  CLANG_REV: clang-r450784e
+  CLANG_REF: android14-release
+  DEVICE_CONFIG: tools/quest3s/device-5.10.240-g9cb2f620a9a8.config
+  UTS_TIMESTAMP: 'Thu Jul 2 23:18:32 PDT 2026'
+  UTS_RELEASE: '5.10.240-g9cb2f620a9a8'
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Host packages and swap
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex libssl-dev libelf-dev cpio \
+            rsync gzip xz-utils python3 python3-pyelftools pkg-config \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu device-tree-compiler
+          sudo rm -f /swapfile-kmi
+          sudo fallocate -l 8G /swapfile-kmi
+          sudo chmod 600 /swapfile-kmi
+          sudo mkswap /swapfile-kmi >/dev/null
+          sudo swapon /swapfile-kmi
+          free -h
+
+      - name: Cache Android clang
+        id: clang-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/clang
+          key: clang-${{ env.CLANG_REV }}-v1
+
+      - name: Fetch Android clang
+        if: steps.clang-cache.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p "$HOME/clang"
+          curl -fsSL -o clang.tar.gz \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/refs/heads/${{ env.CLANG_REF }}/${{ env.CLANG_REV }}.tar.gz"
+          tar -xzf clang.tar.gz -C "$HOME/clang"
+          rm -f clang.tar.gz
+          "$HOME/clang/bin/clang" --version
+
+      - name: Fetch the stock tree at the device commit
+        run: |
+          mkdir -p "$RUNNER_TEMP/stock"
+          cd "$RUNNER_TEMP/stock"
+          git init -q .
+          git remote add origin "$STOCK_URL"
+          git fetch -q --depth 1 origin "$STOCK_SHA"
+          git checkout -q FETCH_HEAD
+          test -f Makefile
+          grep -m1 '^VERSION' Makefile
+
+      - name: Configure exactly like the device
+        run: |
+          cd "$RUNNER_TEMP/stock"
+          export PATH="$HOME/clang/bin:$PATH"
+          mkdir -p out
+          cp "$GITHUB_WORKSPACE/$DEVICE_CONFIG" out/.config
+          printf 'CONFIG_LOCALVERSION="-g9cb2f620a9a8"\n# CONFIG_LOCALVERSION_AUTO is not set\n# CONFIG_DEBUG_INFO is not set\n# CONFIG_DEBUG_INFO_BTF is not set\n' \
+            > "$RUNNER_TEMP/control.fragment"
+          ./scripts/kconfig/merge_config.sh -m -O out out/.config "$RUNNER_TEMP/control.fragment"
+          make -s ARCH=arm64 LLVM=1 LLVM_IAS=1 REAL_CC=clang \
+            CROSS_COMPILE=aarch64-linux-gnu- LOCALVERSION= O=out olddefconfig
+          grep -E '^CONFIG_(LOCALVERSION|ARM64_VA_BITS|PGTABLE_LEVELS|MODVERSIONS|CFI_CLANG|LTO_CLANG_)=' out/.config
+          echo "== device keys the public tree has no Kconfig entry for =="
+          python3 - "$GITHUB_WORKSPACE/$DEVICE_CONFIG" out/.config <<'PY'
+          import sys
+          def load(p):
+              d = {}
+              for line in open(p, encoding="utf-8", errors="replace"):
+                  line = line.strip()
+                  if not line:
+                      continue
+                  if line.startswith("# CONFIG_") and line.endswith(" is not set"):
+                      d[line.split()[1]] = None
+                      continue
+                  if line.startswith("#"):
+                      continue
+                  if "=" in line:
+                      k, v = line.split("=", 1)
+                      d[k] = v
+              return d
+          a, b = load(sys.argv[1]), load(sys.argv[2])
+          dropped = [k for k in a if k not in b]
+          print("device keys %d, control keys %d, dropped %d" % (len(a), len(b), len(dropped)))
+          for k in dropped:
+              print("  dropped", k)
+          PY
+
+      - name: Build Image and modules
+        run: |
+          cd "$RUNNER_TEMP/stock"
+          export PATH="$HOME/clang/bin:$PATH"
+          export KBUILD_BUILD_VERSION=1
+          export KBUILD_BUILD_TIMESTAMP="$UTS_TIMESTAMP"
+          make -j"$(nproc)" ARCH=arm64 LLVM=1 LLVM_IAS=1 REAL_CC=clang \
+            CROSS_COMPILE=aarch64-linux-gnu- O=out Image modules 2>&1 | tail -40
+
+      - name: Verify identity
+        run: |
+          cd "$RUNNER_TEMP/stock"
+          rc=0
+          strings out/arch/arm64/boot/Image | grep -qF "Linux version $UTS_RELEASE" \
+            || { echo "::error::release mismatch"; rc=1; }
+          strings out/arch/arm64/boot/Image | grep -qF "#1 SMP PREEMPT $UTS_TIMESTAMP" \
+            || { echo "::error::version mismatch"; rc=1; }
+          exit $rc
+
+      - name: Collect the symvers
+        run: |
+          cd "$RUNNER_TEMP/stock"
+          mkdir -p dist
+          cp out/Module.symvers dist/control-Module.symvers
+          cp out/.config dist/control-config
+          cp out/arch/arm64/boot/Image dist/control-Image
+          cp out/include/config/kernel.release dist/
+          (cd dist && sha256sum control-Module.symvers control-Image | tee SHA256SUMS)
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stock-240-kmi-control
+          path: ${{ runner.temp }}/stock/dist/*
+          if-no-files-found: error
