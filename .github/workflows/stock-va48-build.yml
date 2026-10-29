@@ -48,6 +48,12 @@ env:
   UTS_TIMESTAMP: 'Thu Jul 2 23:18:32 PDT 2026'
   UTS_RELEASE: '5.10.240-g9cb2f620a9a8'
   KSU_MODE: ${{ inputs.ksu_mode || 'builtin' }}
+  # The manager APK compares its own versionCode with the kernel's KSU_VERSION
+  # over the supercall and refuses to drive a kernel that reports a different
+  # one, so the kernel has to carry the code of the APK people can actually
+  # install.  The newest publicly built manager is BakaSU v4.2.0-rc3 / 35254
+  # (CI artifact "Manager-release"); the vendored tree says 35252.
+  KSU_VERSION_CODE: '35254'
 
 jobs:
   build:
@@ -154,6 +160,17 @@ jobs:
         run: |
           cd "$RUNNER_TEMP/stock"
           export PATH="$HOME/clang/bin:$PATH"
+          # Pin the version code the manager compares against (see KSU_VERSION_CODE).
+          if [ -n "${KSU_VERSION_CODE:-}" ]; then
+            sed -i -E \
+              "s/^KSU_VERSION[[:space:]]*:=[[:space:]]*[0-9]+/KSU_VERSION := $KSU_VERSION_CODE/" \
+              drivers/kernelsu/Kbuild
+            echo "== KernelSU version code =="
+            grep -nE '^KSU_VERSION[[:space:]]*:=' drivers/kernelsu/Kbuild || {
+              echo "::error::no KSU_VERSION assignment in drivers/kernelsu/Kbuild"; exit 1; }
+            grep -qE "^KSU_VERSION[[:space:]]*:=[[:space:]]*$KSU_VERSION_CODE$" drivers/kernelsu/Kbuild \
+              || { echo "::error::failed to pin KSU_VERSION to $KSU_VERSION_CODE"; exit 1; }
+          fi
           mkdir -p out
           cp "$GITHUB_WORKSPACE/$DEVICE_CONFIG" out/.config
           # KernelSU (BakaSU lineage) can be built into the kernel or as an LKM.
@@ -230,10 +247,6 @@ jobs:
           grep -qF "#1 SMP PREEMPT $UTS_TIMESTAMP" out/include/generated/compile.h \
             || { echo "::error::generated compile.h does not carry the device UTS_VERSION"; rc=1; }
           exit $rc
-          if ! strings out/arch/arm64/boot/Image | grep -qF "$want"; then
-            echo "::warning::version banner differs (possibly truncated to 64 chars)"
-          fi
-          echo "uname string verified"
 
       - name: Export Image.el1 and collect artifacts
         run: |
@@ -243,6 +256,22 @@ jobs:
             "https://raw.githubusercontent.com/H2Omeow/quest3s-el1-kexec/main/scripts/prepare-image.py"
           python3 prepare-image.py out/vmlinux Image.el1
           mkdir -p dist
+          {
+            echo "build: stock $STOCK_SHA + $FORK_REF feature patch"
+            echo "compiler: $(clang --version | head -1)"
+            echo "uts_release: $(grep -o '"[^"]*"' out/include/generated/utsrelease.h | tr -d '\"')"
+            echo "uts_version: $(sed -n 's/^#define UTS_VERSION \"\\(.*\\)\"/\\1/p' out/include/generated/compile.h)"
+            echo "config_localversion: $(sed -n 's/^CONFIG_LOCALVERSION=\"\\(.*\\)\"/\\1/p' out/.config)"
+            echo "va_bits: $(sed -n 's/^CONFIG_ARM64_VA_BITS=\\(.*\\)/\\1/p' out/.config)"
+            echo "pgtables: $(sed -n 's/^CONFIG_PGTABLE_LEVELS=\\(.*\\)/\\1/p' out/.config)"
+            echo "ksu: $(grep -E '^CONFIG_KSU=' out/.config) tracepoint=$(grep -cE '^CONFIG_KSU_TRACEPOINT_HOOK=y' out/.config) multi_manager=$(grep -cE '^CONFIG_KSU_MULTI_MANAGER_SUPPORT=y' out/.config)"
+            echo "ksu_version_code: $(grep -E '^KSU_VERSION[[:space:]]*:=' drivers/kernelsu/Kbuild | head -1 | sed -E 's/.*:[[:space:]]*//') (pinned to KSU_VERSION_CODE=$KSU_VERSION_CODE)"
+            echo "ntsync: $(grep -E '^CONFIG_NTSYNC=' out/.config)"
+            echo "kgsl: $(grep -E '^CONFIG_QCOM_KGSL(_GPU_VA48)?=' out/.config | tr '\n' ' ')"
+            echo "image_bytes: $(stat -c%s out/arch/arm64/boot/Image)"
+            echo "image_el1_bytes: $(stat -c%s Image.el1)"
+          } > dist/identity.txt
+          cat dist/identity.txt
           cp out/arch/arm64/boot/Image dist/
           cp Image.el1 dist/
           cp out/Module.symvers dist/
