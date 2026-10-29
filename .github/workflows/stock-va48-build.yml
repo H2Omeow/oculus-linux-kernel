@@ -1,4 +1,4 @@
-﻿name: Stock 5.10.240 rebuild with VA48, NTSync, KSU and Droidspaces
+name: Stock 5.10.240 rebuild with VA48, NTSync, KSU and Droidspaces
 
 # Builds the *device's own kernel version* (5.10.240, uname identical to the
 # stock kernel) with the handoff patches and the requested feature set, so the
@@ -19,6 +19,13 @@ on:
         description: 'Also build modules (slower)'
         type: boolean
         default: true
+      ksu_mode:
+        description: 'KernelSU build form: builtin or lkm'
+        type: choice
+        options:
+          - builtin
+          - lkm
+        default: builtin
   push:
     paths:
       - '.github/workflows/stock-va48-build.yml'
@@ -40,6 +47,7 @@ env:
   IDENTITY_FRAGMENT: tools/quest3s/stock-240.fragment
   UTS_TIMESTAMP: 'Thu Jul 2 23:18:32 PDT 2026'
   UTS_RELEASE: '5.10.240-g9cb2f620a9a8'
+  KSU_MODE: ${{ inputs.ksu_mode || 'builtin' }}
 
 jobs:
   build:
@@ -114,13 +122,33 @@ jobs:
             cat "$RUNNER_TEMP/conflicts.txt"
             exit 1
           fi
-          echo "== VA48 files touched =="
-          git diff --stat -- arch/arm64/include/asm/memory.h \
-            arch/arm64/include/asm/processor.h arch/arm64/kernel/kaslr.c \
-            arch/arm64/mm/init.c arch/arm64/mm/mmu.c arch/arm64/mm/proc.S \
-            drivers/gpu/msm/kgsl_iommu.c | tail -12
-          echo "== requested feature sources present =="
-          ls -d drivers/kernelsu fs/ntsync drivers/misc/quest_handoff.c 2>/dev/null || true
+          echo "== VA48 and feature markers =="
+          # Assert on *content*, not on `git diff`: `git apply --3way` stages
+          # what it applied, so `git diff` alone would look empty even on a
+          # successful application.
+          fail=0
+          check() { # pattern file description
+            if grep -q "$1" "$2" 2>/dev/null; then
+              echo "ok   $3"
+            else
+              echo "::error::missing $3 (pattern '$1' in $2)"
+              fail=1
+            fi
+          }
+          check 'define KERNEL_VA_BITS' arch/arm64/include/asm/memory.h \
+            'userspace VA48 / kernel VA39 split'
+          check 'KERNEL_VA_BITS - 1' arch/arm64/mm/init.c \
+            'linear map sized by kernel VA bits'
+          check 'KERNEL_VA_BITS - 2' arch/arm64/kernel/kaslr.c \
+            'KASLR range clamped to the kernel VA window'
+          check 'config QUEST_HANDOFF' drivers/misc/Kconfig 'quest_handoff driver'
+          check 'QCOM_KGSL_GPU_VA48' drivers/gpu/msm/Kconfig 'KGSL GPU VA48 support'
+          check 'KSU_TRACEPOINT_HOOK' drivers/kernelsu/Kconfig 'KernelSU tracepoint hook'
+          check 'config NTSYNC' drivers/misc/Kconfig 'NTSync driver'
+          [ -f drivers/misc/quest_handoff.c ] || { echo "::error::quest_handoff.c missing"; fail=1; }
+          [ -f drivers/misc/ntsync.c ] || { echo "::error::ntsync.c missing"; fail=1; }
+          git status --short | head -20
+          exit $fail
 
       - name: Configure from the device configuration
         run: |
@@ -128,21 +156,36 @@ jobs:
           export PATH="$HOME/clang/bin:$PATH"
           mkdir -p out
           cp "$GITHUB_WORKSPACE/$DEVICE_CONFIG" out/.config
+          # KernelSU (BakaSU lineage) can be built into the kernel or as an LKM.
+          # The device currently gets root from an insmod'ed kernelsu.ko, so the
+          # LKM form is what a drop-in replacement should be; "builtin" is the
+          # fork's own default.
+          case "$KSU_MODE" in
+            lkm)     ksu_val=m ;;
+            builtin) ksu_val=y ;;
+            *) echo "::error::unknown ksu_mode '$KSU_MODE' (builtin|lkm)"; exit 1 ;;
+          esac
+          echo "== KernelSU build form: CONFIG_KSU=$ksu_val =="
+          printf 'CONFIG_KSU=%s\n' "$ksu_val" > "$RUNNER_TEMP/ksu.fragment"
           ./scripts/kconfig/merge_config.sh -m -O out out/.config \
             "$GITHUB_WORKSPACE/$FEATURE_FRAGMENT" \
-            "$GITHUB_WORKSPACE/$IDENTITY_FRAGMENT"
+            "$GITHUB_WORKSPACE/$IDENTITY_FRAGMENT" \
+            "$RUNNER_TEMP/ksu.fragment"
           make -s ARCH=arm64 LLVM=1 LLVM_IAS=1 REAL_CC=clang \
             CROSS_COMPILE=aarch64-linux-gnu- LOCALVERSION= O=out olddefconfig
           echo "== identity =="
           grep -E '^CONFIG_LOCALVERSION' out/.config
           grep -E 'LOCALVERSION_AUTO' out/.config || echo "MISSING LOCALVERSION_AUTO"
           echo "== requested features =="
-          for s in ARM64_VA_BITS_48 NTSYNC KSU KSU_TRACEPOINT_HOOK \
+          for s in ARM64_VA_BITS_48 NTSYNC KSU_TRACEPOINT_HOOK \
                    QCOM_KGSL_GPU_VA48 QUEST_HANDOFF USER_NS OVERLAY_FS TUN VETH \
                    BRIDGE CHECKPOINT_RESTORE CFI_CLANG LTO_CLANG_FULL PREEMPT; do
             grep -q "^CONFIG_$s=y" out/.config && echo "ok   CONFIG_$s" \
               || echo "MISSING CONFIG_$s=y"
           done
+          grep -E '^CONFIG_KSU=' out/.config
+          grep -q "^CONFIG_KSU=$ksu_val" out/.config \
+            || { echo "::error::CONFIG_KSU is not $ksu_val after configure"; exit 1; }
           grep -E '^CONFIG_PGTABLE_LEVELS=' out/.config
           grep -E '^CONFIG_ARM64_VA_BITS=' out/.config
 
@@ -169,14 +212,24 @@ jobs:
       - name: Verify the uname string in the Image
         run: |
           cd "$RUNNER_TEMP/stock"
-          want="$UTS_RELEASE #1 SMP PREEMPT $UTS_TIMESTAMP"
-          echo "want: $want"
+          # uname -r and uname -v are compiled in separately: utsname.release is
+          # UTS_RELEASE and utsname.version is UTS_VERSION, and linux_banner
+          # puts the compile-by/host/compiler fields between them, so they can
+          # never appear as one contiguous string.  Check them separately.
+          echo "want release: $UTS_RELEASE"
+          echo "want version: #1 SMP PREEMPT $UTS_TIMESTAMP"
           strings out/arch/arm64/boot/Image | grep -F "$UTS_RELEASE" | head -5
-          if ! strings out/arch/arm64/boot/Image | grep -qF "$UTS_RELEASE #1 SMP PREEMPT $UTS_TIMESTAMP"; then
-            echo "::error::the built Image does not carry the exact device uname"
-            strings out/arch/arm64/boot/Image | grep -F '5.10.240' | head -5
-            exit 1
-          fi
+          strings out/arch/arm64/boot/Image | grep -F "#1 SMP PREEMPT $UTS_TIMESTAMP" | head -5
+          rc=0
+          strings out/arch/arm64/boot/Image | grep -qF "Linux version $UTS_RELEASE" \
+            || { echo "::error::Image does not carry utsname.release $UTS_RELEASE"; rc=1; }
+          strings out/arch/arm64/boot/Image | grep -qF "#1 SMP PREEMPT $UTS_TIMESTAMP" \
+            || { echo "::error::Image does not carry utsname.version '#1 SMP PREEMPT $UTS_TIMESTAMP'"; rc=1; }
+          grep -qF "\"$UTS_RELEASE\"" out/include/generated/utsrelease.h \
+            || { echo "::error::generated utsrelease.h is not $UTS_RELEASE"; rc=1; }
+          grep -qF "#1 SMP PREEMPT $UTS_TIMESTAMP" out/include/generated/compile.h \
+            || { echo "::error::generated compile.h does not carry the device UTS_VERSION"; rc=1; }
+          exit $rc
           if ! strings out/arch/arm64/boot/Image | grep -qF "$want"; then
             echo "::warning::version banner differs (possibly truncated to 64 chars)"
           fi
