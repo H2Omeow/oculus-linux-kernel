@@ -44,8 +44,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y bc bison flex libssl-dev libelf-dev cpio \
-            rsync gzip xz-utils python3 pkg-config \
+            rsync gzip xz-utils python3 python3-pyelftools pkg-config \
             gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
+          python3 -c 'import elftools; print("pyelftools ok")'
 
       - name: Cache Android clang
         id: clang
@@ -99,6 +100,7 @@ jobs:
         run: |
           export PATH="$HOME/clang/bin:$PATH"
           curl -fsSL -o prepare-image.py "$LOADER_RAW/scripts/prepare-image.py"
+          python3 -c 'import elftools' || pip3 install --quiet pyelftools
           python3 prepare-image.py out/vmlinux Image.el1
           ls -l out/arch/arm64/boot/Image Image.el1
 
