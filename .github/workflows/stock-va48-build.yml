@@ -1,4 +1,4 @@
-name: Stock 5.10.240 rebuild with VA48, NTSync, KSU and Droidspaces
+﻿name: Stock 5.10.240 rebuild with VA48, NTSync, KSU and Droidspaces
 
 # Builds the *device's own kernel version* (5.10.240, uname identical to the
 # stock kernel) with the handoff patches and the requested feature set, so the
@@ -59,7 +59,7 @@ jobs:
           sudo rm -f /swapfile-lto
           sudo fallocate -l 8G /swapfile-lto
           sudo chmod 600 /swapfile-lto
-          sudo mkswap -q /swapfile-lto >/dev/null
+          sudo mkswap /swapfile-lto >/dev/null
           sudo swapon /swapfile-lto
           free -m
 
