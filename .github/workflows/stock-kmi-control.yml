@@ -115,8 +115,21 @@ jobs:
           export PATH="$HOME/clang/bin:$PATH"
           export KBUILD_BUILD_VERSION=1
           export KBUILD_BUILD_TIMESTAMP="$UTS_TIMESTAMP"
+          # Keep the whole log: the first failure is what matters, and piping
+          # straight into tail hides it (and swallows make's exit status).
+          set +e
           make -j"$(nproc)" ARCH=arm64 LLVM=1 LLVM_IAS=1 REAL_CC=clang \
-            CROSS_COMPILE=aarch64-linux-gnu- O=out Image modules 2>&1 | tail -40
+            CROSS_COMPILE=aarch64-linux-gnu- O=out Image modules > build.log 2>&1
+          rc=$?
+          set -e
+          if [ $rc -ne 0 ]; then
+            echo "::error::make failed with $rc"
+            grep -n -E 'error:|Error [0-9]|No rule to make' build.log | head -40
+            echo "--- context ---"
+            grep -n -B4 -A12 -E 'error:|Error [0-9]' build.log | head -120
+            exit $rc
+          fi
+          tail -5 build.log
 
       - name: Verify identity
         run: |
