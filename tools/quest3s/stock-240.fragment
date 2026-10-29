@@ -1,0 +1,28 @@
+# Identity of the stock 5.10.240 build, plus the handoff helper.
+#
+# This file is merged AFTER handoff-target.fragment, so it wins.
+#
+# Keeping CFI/LTO at the device's settings is deliberate: the stock vendor
+# modules in vendor_dlkm were compiled with CFI_CLANG, so they reference the
+# kernel's __cfi_* machinery.  A kernel built without it cannot load them
+# ("unknown symbol __cfi_..."), which defeats the point of matching the stock
+# kernel version in the first place.
+
+# --- keep the device's code-generation shape -------------------------------
+CONFIG_CFI_CLANG=y
+CONFIG_LTO_CLANG_FULL=y
+# CONFIG_LTO_CLANG_THIN is not set
+CONFIG_SHADOW_CALL_STACK=y
+CONFIG_MODVERSIONS=y
+
+# --- reproduce the device's uname exactly ----------------------------------
+# uname -r = 5.10.240-g9cb2f620a9a8
+#   the -g suffix is the device build's kernel commit; the public snapshot is
+#   729ec6c4, so LOCALVERSION_AUTO must be off and the suffix set by hand.
+# uname -v = #1 SMP PREEMPT Thu Jul 2 23:18:32 PDT 2026
+#   KBUILD_BUILD_VERSION=1 and KBUILD_BUILD_TIMESTAMP are set by the workflow.
+CONFIG_LOCALVERSION="-g9cb2f620a9a8"
+# CONFIG_LOCALVERSION_AUTO is not set
+
+# --- handoff bring-up ------------------------------------------------------
+CONFIG_QUEST_HANDOFF=y

@@ -1,0 +1,217 @@
+name: Stock 5.10.240 rebuild with VA48, NTSync, KSU and Droidspaces
+
+# Builds the *device's own kernel version* (5.10.240, uname identical to the
+# stock kernel) with the handoff patches and the requested feature set, so the
+# result is both uname-compatible and KMI-compatible with the stock vendor
+# modules:
+#
+#   Linux localhost 5.10.240-g9cb2f620a9a8 #1 SMP PREEMPT
+#   Thu Jul 2 23:18:32 PDT 2026 aarch64 Toybox
+#
+# Source is the public stock snapshot (729ec6c4).  The fork's feature commits
+# are applied as a patch on top of it; the fork's own defconfig is NOT used,
+# the configuration is derived from the device's /proc/config.gz.
+
+on:
+  workflow_dispatch:
+    inputs:
+      modules:
+        description: 'Also build modules (slower)'
+        type: boolean
+        default: true
+  push:
+    paths:
+      - '.github/workflows/stock-va48-build.yml'
+      - 'tools/quest3s/stock-240.fragment'
+
+permissions:
+  contents: read
+
+env:
+  STOCK_URL: https://github.com/facebookincubator/oculus-linux-kernel
+  STOCK_SHA: 729ec6c4b2086454e0157cbc810f5a460789cc67
+  FORK_URL: https://github.com/H2Omeow/oculus-linux-kernel
+  FORK_REF: va48-quest3s
+  FORK_BASE: 043e6bcc61899eaa759a3f1b76606a190c8bb918
+  CLANG_REV: clang-r450784e
+  CLANG_REF: android14-release
+  DEVICE_CONFIG: tools/quest3s/device-5.10.240-g9cb2f620a9a8.config
+  FEATURE_FRAGMENT: tools/quest3s/handoff-target.fragment
+  IDENTITY_FRAGMENT: tools/quest3s/stock-240.fragment
+  UTS_TIMESTAMP: 'Thu Jul 2 23:18:32 PDT 2026'
+  UTS_RELEASE: '5.10.240-g9cb2f620a9a8'
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 350
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Host packages and swap
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison flex libssl-dev libelf-dev cpio \
+            rsync gzip xz-utils python3 python3-pyelftools pkg-config \
+            gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu device-tree-compiler
+          # Full LTO of a 5.10 kernel does not fit 7 GiB; give the linker room.
+          sudo fallocate -l 8G /swapfile
+          sudo chmod 600 /swapfile
+          sudo mkswap -q /swapfile >/dev/null
+          sudo swapon /swapfile
+          free -m
+
+      - name: Cache Android clang
+        id: clang
+        uses: actions/cache@v4
+        with:
+          path: ~/clang
+          key: ${{ env.CLANG_REV }}-v1
+
+      - name: Fetch Android clang
+        if: steps.clang.outputs.cache-hit != 'true'
+        run: |
+          mkdir -p ~/clang && cd ~/clang
+          curl -fsSL --retry 3 -o clang.tgz \
+            "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/$CLANG_REF/$CLANG_REV.tar.gz"
+          tar -xzf clang.tgz && rm clang.tgz
+          ./bin/clang --version | head -1
+
+      - name: Fetch the stock tree at the device commit
+        run: |
+          mkdir -p "$RUNNER_TEMP/stock"
+          cd "$RUNNER_TEMP/stock"
+          git init -q .
+          git remote add origin "$STOCK_URL"
+          git fetch -q --depth 1 origin "$STOCK_SHA"
+          git checkout -q FETCH_HEAD
+          echo "stock $(git rev-parse HEAD)"
+
+      - name: Extract the fork feature patch
+        run: |
+          git clone -q --no-checkout --filter=blob:none --depth 3 \
+            --branch "$FORK_REF" "$FORK_URL" "$RUNNER_TEMP/fork"
+          cd "$RUNNER_TEMP/fork"
+          git diff "$FORK_BASE" "$FORK_REF" > "$RUNNER_TEMP/features.patch"
+          wc -l "$RUNNER_TEMP/features.patch"
+          grep -c '^diff --git' "$RUNNER_TEMP/features.patch"
+
+      - name: Apply the feature patch to the stock tree
+        run: |
+          cd "$RUNNER_TEMP/stock"
+          set +e
+          git apply --3way --whitespace=nowarn "$RUNNER_TEMP/features.patch"
+          rc=$?
+          set -e
+          if [ $rc -ne 0 ]; then
+            echo "::warning::git apply --3way exited $rc; checking what landed"
+          fi
+          if grep -rIl '^<<<<<<< ' --include='*.c' --include='*.h' --include='*.S' . \
+               --exclude-dir=.git | head -20 | tee "$RUNNER_TEMP/conflicts.txt" | grep -q .; then
+            echo "::error::conflict markers left in the tree"
+            cat "$RUNNER_TEMP/conflicts.txt"
+            exit 1
+          fi
+          echo "== VA48 files touched =="
+          git diff --stat -- arch/arm64/include/asm/memory.h \
+            arch/arm64/include/asm/processor.h arch/arm64/kernel/kaslr.c \
+            arch/arm64/mm/init.c arch/arm64/mm/mmu.c arch/arm64/mm/proc.S \
+            drivers/gpu/msm/kgsl_iommu.c | tail -12
+          echo "== requested feature sources present =="
+          ls -d drivers/kernelsu fs/ntsync drivers/misc/quest_handoff.c 2>/dev/null || true
+
+      - name: Configure from the device configuration
+        run: |
+          cd "$RUNNER_TEMP/stock"
+          export PATH="$HOME/clang/bin:$PATH"
+          mkdir -p out
+          cp "$GITHUB_WORKSPACE/$DEVICE_CONFIG" out/.config
+          ./scripts/kconfig/merge_config.sh -m -O out out/.config \
+            "$GITHUB_WORKSPACE/$FEATURE_FRAGMENT" \
+            "$GITHUB_WORKSPACE/$IDENTITY_FRAGMENT"
+          make -s ARCH=arm64 LLVM=1 LLVM_IAS=1 REAL_CC=clang \
+            CROSS_COMPILE=aarch64-linux-gnu- LOCALVERSION= O=out olddefconfig
+          echo "== identity =="
+          grep -E '^CONFIG_LOCALVERSION' out/.config
+          grep -E 'LOCALVERSION_AUTO' out/.config || echo "MISSING LOCALVERSION_AUTO"
+          echo "== requested features =="
+          for s in ARM64_VA_BITS_48 NTSYNC KSU KSU_TRACEPOINT_HOOK \
+                   QCOM_KGSL_GPU_VA48 QUEST_HANDOFF USER_NS OVERLAY_FS TUN VETH \
+                   BRIDGE CHECKPOINT_RESTORE CFI_CLANG LTO_CLANG_FULL PREEMPT; do
+            grep -q "^CONFIG_$s=y" out/.config && echo "ok   CONFIG_$s" \
+              || echo "MISSING CONFIG_$s=y"
+          done
+          grep -E '^CONFIG_PGTABLE_LEVELS=' out/.config
+          grep -E '^CONFIG_ARM64_VA_BITS=' out/.config
+
+      - name: Build Image and modules
+        run: |
+          cd "$RUNNER_TEMP/stock"
+          export PATH="$HOME/clang/bin:$PATH"
+          export KBUILD_BUILD_VERSION=1
+          export KBUILD_BUILD_TIMESTAMP="$UTS_TIMESTAMP"
+          targets="Image"
+          if [ "${{ inputs.modules }}" != 'false' ]; then
+            targets="Image modules"
+          fi
+          make ARCH=arm64 LLVM=1 LLVM_IAS=1 REAL_CC=clang \
+            CROSS_COMPILE=aarch64-linux-gnu- LOCALVERSION= O=out \
+            -j"$(nproc)" $targets 2>&1 | tail -n 600 > build-tail.log || {
+              tail -n 200 build-tail.log; exit 1; }
+          tail -n 20 build-tail.log
+          echo "== generated identity =="
+          grep UTS_RELEASE out/include/generated/utsrelease.h
+          grep UTS_VERSION out/include/generated/compile.h
+          cat out/include/config/kernel.release
+
+      - name: Verify the uname string in the Image
+        run: |
+          cd "$RUNNER_TEMP/stock"
+          want="$UTS_RELEASE #1 SMP PREEMPT $UTS_TIMESTAMP"
+          echo "want: $want"
+          strings out/arch/arm64/boot/Image | grep -F "$UTS_RELEASE" | head -5
+          if ! strings out/arch/arm64/boot/Image | grep -qF "$UTS_RELEASE #1 SMP PREEMPT $UTS_TIMESTAMP"; then
+            echo "::error::the built Image does not carry the exact device uname"
+            strings out/arch/arm64/boot/Image | grep -F '5.10.240' | head -5
+            exit 1
+          fi
+          if ! strings out/arch/arm64/boot/Image | grep -qF "$want"; then
+            echo "::warning::version banner differs (possibly truncated to 64 chars)"
+          fi
+          echo "uname string verified"
+
+      - name: Export Image.el1 and collect artifacts
+        run: |
+          cd "$RUNNER_TEMP/stock"
+          export PATH="$HOME/clang/bin:$PATH"
+          curl -fsSL -o prepare-image.py \
+            "https://raw.githubusercontent.com/H2Omeow/quest3s-el1-kexec/main/scripts/prepare-image.py"
+          python3 prepare-image.py out/vmlinux Image.el1
+          mkdir -p dist
+          cp out/arch/arm64/boot/Image dist/
+          cp Image.el1 dist/
+          cp out/Module.symvers dist/
+          cp out/System.map dist/
+          cp out/.config dist/config-used
+          cp out/include/config/kernel.release dist/
+          if [ -d out ]; then
+            find out -name '*.ko' -printf '%P\n' | sort > dist/modules.list || true
+            (cd out && find . -name '*.ko' -print0 | tar -czf "$GITHUB_WORKSPACE/dist-modules.tgz" --null -T -) || true
+          fi
+          (cd dist && sha256sum Image Image.el1 Module.symvers 2>/dev/null | tee SHA256SUMS)
+          ls -l dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: stock-240-va48-kernel
+          path: |
+            ${{ runner.temp }}/stock/dist/*
+            dist-modules.tgz
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stock-240-va48-logs
+          path: |
+            ${{ runner.temp }}/stock/build-tail.log
