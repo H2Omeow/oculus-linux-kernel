@@ -31,7 +31,7 @@ env:
   STOCK_URL: https://github.com/facebookincubator/oculus-linux-kernel
   STOCK_SHA: 729ec6c4b2086454e0157cbc810f5a460789cc67
   FORK_URL: https://github.com/H2Omeow/oculus-linux-kernel
-  FORK_REF: va48-quest3s
+  FORK_REF: handoff/ci  # va48-quest3s + the handoff driver and tooling
   FORK_BASE: 043e6bcc61899eaa759a3f1b76606a190c8bb918
   CLANG_REV: clang-r450784e
   CLANG_REF: android14-release
@@ -91,7 +91,7 @@ jobs:
 
       - name: Extract the fork feature patch
         run: |
-          git clone -q --no-checkout --filter=blob:none --depth 3 \
+          git clone -q --no-checkout --filter=blob:none --depth 8 \
             --branch "$FORK_REF" "$FORK_URL" "$RUNNER_TEMP/fork"
           cd "$RUNNER_TEMP/fork"
           git diff "$FORK_BASE" "$FORK_REF" > "$RUNNER_TEMP/features.patch"
