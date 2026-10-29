@@ -55,10 +55,12 @@ jobs:
             rsync gzip xz-utils python3 python3-pyelftools pkg-config \
             gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu device-tree-compiler
           # Full LTO of a 5.10 kernel does not fit 7 GiB; give the linker room.
-          sudo fallocate -l 8G /swapfile
-          sudo chmod 600 /swapfile
-          sudo mkswap -q /swapfile >/dev/null
-          sudo swapon /swapfile
+          # The runner image already owns /swapfile, so use a fresh path.
+          sudo rm -f /swapfile-lto
+          sudo fallocate -l 8G /swapfile-lto
+          sudo chmod 600 /swapfile-lto
+          sudo mkswap -q /swapfile-lto >/dev/null
+          sudo swapon /swapfile-lto
           free -m
 
       - name: Cache Android clang
