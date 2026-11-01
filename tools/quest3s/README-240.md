@@ -2,8 +2,8 @@
 
 本分支 handoff/240-H2O 直接基于 5.10.240 vendor commit 729ec6c4b2086454e0157cbc810f5a460789cc67，而不是 5.10.246 源码改 Makefile。
 
-构建 run：41286406725，commit 33dc76559f24f34ca3bfbd9134d7e588aa0ff195，artifact 13075128174。
-产物：kernel.release 5.10.240-va48-H2O；Image 36,438,068 B；Image.el1 34,802,176 B；267 个模块。
+构建 run：41292654740，commit c8092688d333d0492e0585cb054aca3bf985ceba，artifact 13078212080。
+产物：kernel.release 5.10.240-va48-H2O；Image 36,438,068 B；Image.el1 34,804,224 B；265 个模块。
 
 ## 功能
 
@@ -13,7 +13,8 @@
 - Quest handoff：CONFIG_QUEST_HANDOFF=y，early initcall 自检和 deadman。
 - BakaSU：vendored 35259，KSU_VERSION 35259，KSU_COMMIT_SHA 6c13db63，配套 manager 35259。
 - Droidspaces：非 GKI 内核前置项，详见 DROIDSPACES.md。
-- 模块加载：check_version 返回 1，same_magic 返回 1，module_sig_check 返回 0，CFI_PERMISSIVE=y，MODULE_FORCE_LOAD=y。绕过校验不等于 ABI 兼容，优先使用本构建的 267 个模块。
+- RPMh warm handoff：QCOM_RPMH 和 QCOM_COMMAND_DB 内建到 Image；rpmh_rsc_probe 在申请 IRQ 前清理上一内核遗留的 TCS/IRQ 状态，tcs_is_free 同时检查硬件 RSC_DRV_STATUS。时钟、regulator、interconnect provider 仍保持模块，它们调用内建 core 导出的 rpmh_write()/rpmh_write_batch()。详见 RPMH_WARM_HANDOFF.md。
+- 模块加载：check_version 返回 1，same_magic 返回 1，module_sig_check 返回 0，CFI_PERMISSIVE=y，MODULE_FORCE_LOAD=y。绕过校验不等于 ABI 兼容，优先使用本构建的 265 个模块。
 
 ## 构建注意
 
@@ -22,6 +23,7 @@
 - qcacld-3.0/Kbuild 原来通过 /tmp/qcacld-3.0 软链访问源码；CI 上该路径可能已是目录，导致 configs/qca6490_defconfig 找不到。现改为直接用 srctree 路径。
 - Build Image and modules 步骤已加 set -o pipefail，make 失败不会再被 tail 掩盖。
 - Image.el1 由加载器仓库的 scripts/prepare-image.py 导出；Image 头的 text_offset 必须为 0，image_size 与内容一致。
+- missing-modules.txt 里的 cmd_db、kernelsu、qcom_rpmh 是内建到 Image 的符号，quest_el1_kexec 是 loader 模块，不是 target 模块；这四项都不应作为缺失模块处理。
 
 ## 贡献者
 
