@@ -26,6 +26,8 @@ kernelsu-objs += infra/event_queue.o
 kernelsu-objs += runtime/boot_event.o
 kernelsu-objs += runtime/ksud_integration.o
 
+kernelsu-objs += infra/btf_parser.o
+kernelsu-objs += selinux/inode.o
 kernelsu-objs += selinux/selinux.o
 kernelsu-objs += selinux/sepolicy.o
 kernelsu-objs += selinux/rules.o
@@ -56,11 +58,11 @@ REPO_NAME := BakaSU
 
 KSU_SRC := $(realpath $(dir $(abspath $(lastword $(MAKEFILE_LIST)))))
 
-# This component is vendored into the kernel tree. Fixed metadata keeps source
-# archives reproducible without Git metadata or network access.
-KSU_VERSION := 35252
-KSU_TAG_NAME := v4.1.0
-KSU_COMMIT_SHA := d5e9e025-quest3s
+# Vendored from BakaSU 6c13db63 (v4.2.0-rc3, manager version 35259).
+# Fixed metadata keeps source archives reproducible without Git metadata.
+KSU_VERSION := 35259
+KSU_TAG_NAME := v4.2.0-rc3
+KSU_COMMIT_SHA := 6c13db63
 KSU_BRANCH_NAME := vendored-quest3s
 
 ifdef KBUILD_EXTMOD
@@ -75,7 +77,7 @@ KSU_VERSION_FULL := $(subst %REPO_NAME%,$(REPO_NAME),$(KSU_VERSION_FULL))
 KSU_VERSION_FULL := $(subst %BRANCH_NAME%,$(KSU_BRANCH_NAME),$(KSU_VERSION_FULL))
 KSU_VERSION_FULL := $(subst %KSU_VERSION%,$(KSU_VERSION),$(KSU_VERSION_FULL))
 
-$(info -- $(REPO_NAME) source revision: d5e9e025b8b49155f8014684d64c91742b465f65)
+$(info -- $(REPO_NAME) source revision: 6c13db63588521f4ca28d7f4e992c2ce95b407c0)
 $(info -- $(REPO_NAME) version code: $(KSU_VERSION))
 $(info -- $(REPO_NAME) version name: $(KSU_VERSION_FULL))
 

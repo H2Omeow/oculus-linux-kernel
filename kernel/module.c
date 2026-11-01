@@ -1312,6 +1312,17 @@ static int check_version(const struct load_info *info,
 	unsigned int i, num_versions;
 	struct modversion_info *versions;
 
+	/* QUEST3S_KEXEC_BYPASS_CRC: the target kernel is rebuilt from a modified
+	 * source tree, so its symbol CRCs cannot match stock vendor modules.
+	 * Accept every symbol version instead of failing the load.
+	 */
+	(void)sechdrs;
+	(void)versindex;
+	(void)i;
+	(void)num_versions;
+	(void)versions;
+	return 1;
+
 	/* Exporting module didn't supply crcs?  OK, we're already tainted. */
 	if (!crc)
 		return 1;
@@ -1373,11 +1384,13 @@ static inline int check_modstruct_version(const struct load_info *info,
 static inline int same_magic(const char *amagic, const char *bmagic,
 			     bool has_crcs)
 {
-	if (has_crcs) {
-		amagic += strcspn(amagic, " ");
-		bmagic += strcspn(bmagic, " ");
-	}
-	return strcmp(amagic, bmagic) == 0;
+	/* QUEST3S_KEXEC_BYPASS_VERMAGIC: localversion and MODVERSIONS metadata
+	 * differ after the VA48 rebuild; do not reject the module for either.
+	 */
+	(void)amagic;
+	(void)bmagic;
+	(void)has_crcs;
+	return 1;
 }
 #else
 static inline int check_version(const struct load_info *info,
@@ -1397,7 +1410,11 @@ static inline int check_modstruct_version(const struct load_info *info,
 static inline int same_magic(const char *amagic, const char *bmagic,
 			     bool has_crcs)
 {
-	return strcmp(amagic, bmagic) == 0;
+	/* QUEST3S_KEXEC_BYPASS_VERMAGIC: see the MODVERSIONS branch. */
+	(void)amagic;
+	(void)bmagic;
+	(void)has_crcs;
+	return 1;
 }
 #endif /* CONFIG_MODVERSIONS */
 
@@ -2950,6 +2967,15 @@ static int module_sig_check(struct load_info *info, int flags)
 	const unsigned long markerlen = sizeof(MODULE_SIG_STRING) - 1;
 	const char *reason;
 	const void *mod = info->hdr;
+
+	/* QUEST3S_KEXEC_BYPASS_SIG: vendor modules are not signed for this
+	 * rebuilt kernel.  Do not let the signature policy reject them.
+	 */
+	(void)err;
+	(void)markerlen;
+	(void)reason;
+	(void)mod;
+	return 0;
 
 	/*
 	 * Require flags == 0, as a module with version information
