@@ -1312,6 +1312,12 @@ static int check_version(const struct load_info *info,
 	unsigned int i, num_versions;
 	struct modversion_info *versions;
 
+	/* QUEST3S_KEXEC_BYPASS_CRC: the Android ramdisk modules were built
+	 * against the stock 5.10.240 kernel, so their symbol CRCs and the
+	 * module_layout CRC never match this tree.  Accept them.
+	 */
+	return 1;
+
 	/* Exporting module didn't supply crcs?  OK, we're already tainted. */
 	if (!crc)
 		return 1;
@@ -1377,7 +1383,12 @@ static inline int same_magic(const char *amagic, const char *bmagic,
 		amagic += strcspn(amagic, " ");
 		bmagic += strcspn(bmagic, " ");
 	}
-	return strcmp(amagic, bmagic) == 0;
+	(void)amagic;
+	(void)bmagic;
+	(void)has_crcs;
+
+	/* QUEST3S_KEXEC_BYPASS_VERMAGIC: ignore vermagic. */
+	return 1;
 }
 #else
 static inline int check_version(const struct load_info *info,
@@ -1397,7 +1408,12 @@ static inline int check_modstruct_version(const struct load_info *info,
 static inline int same_magic(const char *amagic, const char *bmagic,
 			     bool has_crcs)
 {
-	return strcmp(amagic, bmagic) == 0;
+	(void)amagic;
+	(void)bmagic;
+	(void)has_crcs;
+
+	/* QUEST3S_KEXEC_BYPASS_VERMAGIC: ignore vermagic. */
+	return 1;
 }
 #endif /* CONFIG_MODVERSIONS */
 
@@ -2950,6 +2966,9 @@ static int module_sig_check(struct load_info *info, int flags)
 	const unsigned long markerlen = sizeof(MODULE_SIG_STRING) - 1;
 	const char *reason;
 	const void *mod = info->hdr;
+
+	/* QUEST3S_KEXEC_BYPASS_SIG: never reject a module for its signature. */
+	return 0;
 
 	/*
 	 * Require flags == 0, as a module with version information

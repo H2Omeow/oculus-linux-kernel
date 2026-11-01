@@ -20,7 +20,7 @@ def main():
         KSU_TRACEPOINT_HOOK TRACEPOINTS LTO_CLANG_THIN CFI_CLANG
     """.split(), "y"))
     requested["QCOM_KGSL"] = "m"
-    requested["LOCALVERSION"] = '"-quest3s-va48"'
+    requested["LOCALVERSION"] = '"-va48-H2O"'
     mismatches = [f"CONFIG_{key}: expected {value}, found {values.get(key, 'n')}"
                   for key, value in sorted(requested.items())
                   if values.get(key) != value]

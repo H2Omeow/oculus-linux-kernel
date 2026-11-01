@@ -6,7 +6,7 @@ The target is based on Meta's official **Linux 5.10.246** source baseline
 [`043e6bcc61899eaa759a3f1b76606a190c8bb918`](https://github.com/facebookincubator/oculus-linux-kernel/tree/043e6bcc61899eaa759a3f1b76606a190c8bb918).
 It uses the complete
 [`vendor/quest3s_va48_defconfig`](../../arch/arm64/configs/vendor/quest3s_va48_defconfig)
-and identifies itself as `5.10.246-quest3s-va48`.
+and identifies itself as `5.10.246-va48-H2O`.
 
 CPU and KGSL GPU VA48, NTSync, Droidspaces standard-mode kernel prerequisites,
 and the pinned BakaSU kernel component are integrated. See
@@ -48,7 +48,7 @@ CROSS_COMPILE=aarch64-linux-gnu- LOCALVERSION=
 ```
 
 `REAL_CC=clang` is required by the vendor Makefile. `LOCALVERSION=` preserves
-the configuration's `-quest3s-va48` suffix while suppressing an extra automatic
+the configuration.s `-va48-H2O` suffix while suppressing an extra automatic
 SCM suffix. The output defaults to `out/quest3s-va48` under the source root.
 Every invocation resets that output's configuration to the checked-in
 defconfig; matching previously built objects can still be reused.

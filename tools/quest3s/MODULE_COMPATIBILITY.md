@@ -8,7 +8,7 @@ Linux localhost 5.10.240-g9cb2f620a9a8 #1 SMP PREEMPT Thu Jul 2 23:18:32 PDT 202
 
 公开 stock 源码提交为 [`729ec6c4b2086454e0157cbc810f5a460789cc67`](https://github.com/facebookincubator/oculus-linux-kernel/tree/729ec6c4b2086454e0157cbc810f5a460789cc67)，Makefile 为 5.10.240。发布日期接近设备编译日期，不能证明与设备配置、工具链及 ABI 一致。EL1 当前是源码推断的适配假设，需由运行时检查确认；`uname` 不含启动 EL 信息。
 
-VA48 自定义目标基于官方 [`043e6bcc61899eaa759a3f1b76606a190c8bb918`](https://github.com/facebookincubator/oculus-linux-kernel/tree/043e6bcc61899eaa759a3f1b76606a190c8bb918)，原生版本是 **5.10.246**，当前使用 `5.10.246-quest3s-va48`。没有改写版本号伪装为设备的原厂构建。
+VA48 自定义目标基于官方 [`043e6bcc61899eaa759a3f1b76606a190c8bb918`](https://github.com/facebookincubator/oculus-linux-kernel/tree/043e6bcc61899eaa759a3f1b76606a190c8bb918)，原生版本是 **5.10.246**，当前使用 `5.10.246-va48-H2O`。没有改写版本号伪装为设备的原厂构建。
 
 ## 两套构建
 
