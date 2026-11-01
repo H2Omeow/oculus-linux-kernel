@@ -118,23 +118,12 @@ CONFIG_MODULE_FORCE_LOAD=y
 # CONFIG_MODULE_SIG_ALL is not set
 
 # --- RPMh warm-handoff safety ---------------------------------------------
-# The stock config leaves the whole RPMh stack modular, so Android's vendor
-# ramdisk loads the old modules after the handoff.  A warm handoff does not
-# reset the RSC, and those modules have no stale-TCS cleanup.  Build the
-# providers into the target so the patched probe in rpmh-rsc.c runs before
-# any vendor module can submit the first RPMh request.
-#
-# REGULATOR_RPMH is the correct symbol for this device tree: ravelin uses
-# qcom,rpmh-vrm-regulator/qcom,rpmh-arc-regulator (generic RPMh VRM), not
-# qcom,pm8150-rpmh-regulators (REGULATOR_QCOM_RPMH).  CLUSTER_PD is a PSCI
-# power domain, so QCOM_RPMHPD is not used here either.
-CONFIG_COMMON_CLK_QCOM=y
+# Build only the RPMh core into the Image so the vendor ramdisk cannot load
+# the stock qcom_rpmh.ko, whose probe has no handoff cleanup.  The clock,
+# regulator and interconnect providers stay modules: building them in pulls
+# in vendor helper symbols that are only provided by other modules
+# (regulator proxy, GDSC debug, socinfo), which breaks the vmlinux link.
+# The stock provider modules call the exported rpmh_write() /
+# rpmh_write_batch() API of this built-in core.
 CONFIG_QCOM_COMMAND_DB=y
 CONFIG_QCOM_RPMH=y
-CONFIG_QCOM_CLK_RPMH=y
-CONFIG_REGULATOR_RPMH=y
-CONFIG_INTERCONNECT_QCOM=y
-CONFIG_INTERCONNECT_QCOM_RPMH=y
-CONFIG_INTERCONNECT_QCOM_RPMH_POSSIBLE=y
-CONFIG_INTERCONNECT_QCOM_BCM_VOTER=y
-CONFIG_INTERCONNECT_QCOM_ANORAK=y
