@@ -22,3 +22,10 @@
 - qcacld-3.0/Kbuild 原来通过 /tmp/qcacld-3.0 软链访问源码；CI 上该路径可能已是目录，导致 configs/qca6490_defconfig 找不到。现改为直接用 srctree 路径。
 - Build Image and modules 步骤已加 set -o pipefail，make 失败不会再被 tail 掩盖。
 - Image.el1 由加载器仓库的 scripts/prepare-image.py 导出；Image 头的 text_offset 必须为 0，image_size 与内容一致。
+
+## 贡献者
+
+- [H2Omeow](https://github.com/H2Omeow) — 项目维护
+- [XiaoMeow-1145](https://github.com/XiaoMeow-1145) — 贡献者
+
+完整名单见根目录 [CONTRIBUTORS.md](../../CONTRIBUTORS.md)。
