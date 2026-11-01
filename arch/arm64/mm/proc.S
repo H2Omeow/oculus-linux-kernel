@@ -434,7 +434,21 @@ SYM_FUNC_START(__cpu_setup)
 	 * Set/prepare TCR and TTBR. TCR_EL1.T1SZ gets further
 	 * adjusted if the kernel is compiled with 52bit VA support.
 	 */
-	mov_q	x10, TCR_TxSZ(VA_BITS) | TCR_CACHE_FLAGS | TCR_SMP_FLAGS | \
+	/*
+	 * T0SZ and T1SZ both describe the hardware walk length, and the walk
+	 * length must match the compile-time page table levels. With 4K pages
+	 * and VA_BITS=48 that is four levels, so both halves get 48 bits here
+	 * even though the kernel half only ever uses the top 39.
+	 *
+	 * The 39-bit kernel layout is pinned by PAGE_OFFSET/PAGE_END in
+	 * asm/memory.h instead. Every kernel address has bits[47:39] set, so
+	 * it occupies PGD entry 511 and no other, which a four level walk
+	 * indexes correctly. Shrinking T1SZ to 25 would make the CPU start
+	 * walking at level 1 while the tables are built as level 0, which
+	 * silently mis-decodes the root table.
+	 */
+	mov_q	x10, TCR_TxSZ(VA_BITS) | \
+			TCR_CACHE_FLAGS | TCR_SMP_FLAGS | \
 			TCR_TG_FLAGS | TCR_KASLR_FLAGS | TCR_ASID16 | \
 			TCR_TBI0 | TCR_A1 | TCR_KASAN_SW_FLAGS | TCR_MTE_FLAGS
 

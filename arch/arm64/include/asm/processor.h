@@ -53,7 +53,8 @@
  * TASK_UNMAPPED_BASE - the lower boundary of the mmap VM area.
  */
 
-#define DEFAULT_MAP_WINDOW_64	(UL(1) << VA_BITS_MIN)
+/* Keep default mmap/stack/PIE below 2^39; high hints may use VA48. */
+#define DEFAULT_MAP_WINDOW_64	(UL(1) << KERNEL_VA_BITS)
 #define TASK_SIZE_64		(UL(1) << vabits_actual)
 
 #ifdef CONFIG_COMPAT

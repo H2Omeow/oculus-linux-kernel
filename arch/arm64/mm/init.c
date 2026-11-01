@@ -341,7 +341,8 @@ static void __init fdt_enforce_memory_region(void)
 
 void __init arm64_memblock_init(void)
 {
-	const s64 linear_region_size = BIT(vabits_actual - 1);
+	/* 线性映射大小按 KERNEL_VA_BITS 计算，不随用户态 VA48 变化。 */
+	const s64 linear_region_size = BIT(KERNEL_VA_BITS - 1);
 
 	/* Handle linux,usable-memory-range property */
 	fdt_enforce_memory_region();
