@@ -223,6 +223,74 @@ static void write_tcs_reg_sync(const struct rsc_drv *drv, int reg, int tcs_id,
 	       data, tcs_id, reg);
 }
 
+
+static void write_tcs_reg_flush(const struct rsc_drv *drv, int reg, int tcs_id,
+				u32 data)
+{
+	writel(data, tcs_reg_addr(drv, reg, tcs_id));
+	/* Flush the posted write without waiting for the TCS to go idle. */
+	(void)readl(tcs_reg_addr(drv, reg, tcs_id));
+}
+
+/**
+ * rpmh_rsc_clear_stale_state() - drop TCS state left by a warm handoff
+ * @drv: The RSC controller.
+ *
+ * A kernel entered through the EL1 kexec handoff inherits the RSC exactly as
+ * the previous kernel left it.  In particular, an active TCS whose completion
+ * interrupt had not been handled yet can still have CMD_ENABLE,
+ * CMD_WAIT_FOR_CMPL and the AMC trigger bits set.  The new driver starts with
+ * an empty tcs_in_use bitmap, so without this cleanup it can select that TCS
+ * and wait for a completion that was already consumed by the old kernel.
+ *
+ * Stop any armed TCS, clear its command state and drop pending IRQ status
+ * before the first request is submitted.  A cold boot reads all zeroes here,
+ * so this is a no-op apart from the IRQ disable that probe re-enables below.
+ */
+static void rpmh_rsc_clear_stale_state(struct rsc_drv *drv)
+{
+	u32 ctrl, cmd_enable, cmd_wait, irq_status;
+	int i;
+
+	writel_relaxed(0, drv->tcs_base + RSC_DRV_IRQ_ENABLE);
+
+	irq_status = readl_relaxed(drv->tcs_base + RSC_DRV_IRQ_STATUS);
+	if (irq_status)
+		writel_relaxed(irq_status, drv->tcs_base + RSC_DRV_IRQ_CLEAR);
+
+	for (i = 0; i < drv->num_tcs; i++) {
+		ctrl = read_tcs_reg(drv, RSC_DRV_CONTROL, i);
+		cmd_enable = read_tcs_reg(drv, RSC_DRV_CMD_ENABLE, i);
+		cmd_wait = read_tcs_reg(drv, RSC_DRV_CMD_WAIT_FOR_CMPL, i);
+
+		if (!(ctrl & (TCS_AMC_MODE_TRIGGER | TCS_AMC_MODE_ENABLE)) &&
+		    !cmd_enable && !cmd_wait)
+			continue;
+
+		if (ctrl & TCS_AMC_MODE_TRIGGER) {
+			ctrl &= ~TCS_AMC_MODE_TRIGGER;
+			write_tcs_reg_flush(drv, RSC_DRV_CONTROL, i, ctrl);
+		}
+		if (ctrl & TCS_AMC_MODE_ENABLE) {
+			ctrl &= ~TCS_AMC_MODE_ENABLE;
+			write_tcs_reg_flush(drv, RSC_DRV_CONTROL, i, ctrl);
+		}
+		if (cmd_enable)
+			write_tcs_reg_flush(drv, RSC_DRV_CMD_ENABLE, i, 0);
+		if (cmd_wait)
+			write_tcs_reg_flush(drv, RSC_DRV_CMD_WAIT_FOR_CMPL, i, 0);
+
+		pr_info("rpmh-rsc: %s: cleared stale TCS %d (ctrl=%#x cmd=%#x wait=%#x)\n",
+			drv->name, i, ctrl, cmd_enable, cmd_wait);
+	}
+
+	/* A stopped TCS can still raise a final completion interrupt. */
+	irq_status = readl_relaxed(drv->tcs_base + RSC_DRV_IRQ_STATUS);
+	if (irq_status)
+		writel_relaxed(irq_status, drv->tcs_base + RSC_DRV_IRQ_CLEAR);
+	wmb();
+}
+
 /**
  * tcs_is_free() - Return if a TCS is totally free.
  * @drv:    The RSC controller.
@@ -236,7 +304,16 @@ static void write_tcs_reg_sync(const struct rsc_drv *drv, int reg, int tcs_id,
  */
 static bool tcs_is_free(struct rsc_drv *drv, int tcs_id)
 {
-	return !test_bit(tcs_id, drv->tcs_in_use);
+	if (test_bit(tcs_id, drv->tcs_in_use))
+		return false;
+
+	/*
+	 * A TCS left busy by the kernel we replaced is free from the software
+	 * point of view but not from the hardware point of view.  STATUS reads
+	 * zero while a TCS is busy, so do not claim such a TCS until the old
+	 * transfer has actually completed.
+	 */
+	return read_tcs_reg(drv, RSC_DRV_STATUS, tcs_id) != 0;
 }
 
 /**
@@ -1350,6 +1427,13 @@ static int rpmh_rsc_probe(struct platform_device *pdev)
 	spin_lock_init(&drv->lock);
 	init_waitqueue_head(&drv->tcs_wait);
 	bitmap_zero(drv->tcs_in_use, MAX_TCS_NR);
+
+	/*
+	 * The bootloader does not reset the RSC across the warm handoff.
+	 * Drop command/IRQ state left by the previous kernel before the
+	 * first request can claim a TCS.
+	 */
+	rpmh_rsc_clear_stale_state(drv);
 
 	irq = platform_get_irq(pdev, drv->id);
 	if (irq < 0)
