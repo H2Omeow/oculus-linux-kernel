@@ -27,5 +27,6 @@
 
 - [H2Omeow](https://github.com/H2Omeow) — 项目维护
 - [XiaoMeow-1145](https://github.com/XiaoMeow-1145) — 贡献者
+- [StonkGuy](https://github.com/StonkGuy) — 贡献者
 
 完整名单见根目录 [CONTRIBUTORS.md](../../CONTRIBUTORS.md)。
