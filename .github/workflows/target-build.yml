@@ -84,6 +84,7 @@ jobs:
 
       - name: Build Image and modules
         run: |
+          set -o pipefail
           export PATH="$HOME/clang/bin:$PATH"
           targets="Image"
           if [ "${{ github.event_name }}" != 'workflow_dispatch' ] || [ "${{ inputs.modules }}" = 'true' ]; then
